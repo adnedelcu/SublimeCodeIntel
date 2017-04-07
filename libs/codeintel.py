@@ -790,7 +790,7 @@ class CodeIntelManager(threading.Thread):
                     self.handle(response)  # handle runs asynchronously and shouldn't raise exceptions
                     buf = b''
                 else:
-                    if ch not in b'0123456789':
+                    if ch not in b'0123456789'.split():
                         raise ValueError("Invalid frame length character: %r" % ch)
                     buf += ch
 

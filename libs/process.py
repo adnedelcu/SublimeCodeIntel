@@ -1,26 +1,26 @@
 from __future__ import absolute_import
 # ***** BEGIN LICENSE BLOCK *****
 # Version: MPL 1.1/GPL 2.0/LGPL 2.1
-# 
+#
 # The contents of this file are subject to the Mozilla Public License
 # Version 1.1 (the "License"); you may not use this file except in
 # compliance with the License. You may obtain a copy of the License at
 # http://www.mozilla.org/MPL/
-# 
+#
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See the
 # License for the specific language governing rights and limitations
 # under the License.
-# 
+#
 # The Original Code is Komodo code.
-# 
+#
 # The Initial Developer of the Original Code is ActiveState Software Inc.
 # Portions created by ActiveState Software Inc are Copyright (C) 2000-2007
 # ActiveState Software Inc. All Rights Reserved.
-# 
+#
 # Contributor(s):
 #   ActiveState Software Inc
-# 
+#
 # Alternatively, the contents of this file may be used under the terms of
 # either the GNU General Public License Version 2 or later (the "GPL"), or
 # the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
@@ -32,7 +32,7 @@ from __future__ import absolute_import
 # and other provisions required by the GPL or the LGPL. If you do not delete
 # the provisions above, a recipient may use your version of this file under
 # the terms of any one of the MPL, the GPL or the LGPL.
-# 
+#
 # ***** END LICENSE BLOCK *****
 
 import os
@@ -45,6 +45,7 @@ import logging
 import threading
 import warnings
 
+py2 = (sys.version_info[0] == 2)
 if sys.version_info[0] == 3:
     string_types = str
 else:
@@ -92,13 +93,9 @@ if sys.platform == "win32" and sys.getwindowsversion()[3] == 2:
                                 STARTF_USESTDHANDLES, STARTF_USESHOWWINDOW,
                                 GetVersion, CreateProcess, TerminateProcess)
     except ImportError:
-        import subprocess
-        SW_HIDE = subprocess._subprocess.SW_HIDE
-        STARTF_USESTDHANDLES = subprocess._subprocess.STARTF_USESTDHANDLES
-        STARTF_USESHOWWINDOW = subprocess._subprocess.STARTF_USESHOWWINDOW
-        GetVersion = subprocess._subprocess.GetVersion
-        CreateProcess = subprocess._subprocess.CreateProcess
-        TerminateProcess = subprocess._subprocess.TerminateProcess
+        from _winapi import (SW_HIDE,
+        STARTF_USESTDHANDLES, STARTF_USESHOWWINDOW,
+        GetVersion, CreateProcess, TerminateProcess)
 
     # This fix is for killing child processes on windows, based on:
     #   http://www.microsoft.com/msj/0698/win320698.aspx
@@ -115,7 +112,37 @@ if sys.platform == "win32" and sys.getwindowsversion()[3] == 2:
 
         _job = None
 
-        def _execute_child(self, args, executable, preexec_fn, close_fds,
+        if py2:
+            def _execute_child(self, args, executable, preexec_fn, close_fds,
+                           cwd, env, universal_newlines,
+                           startupinfo, creationflags, shell,
+                           p2cread, p2cwrite,
+                           c2pread, c2pwrite,
+                           errread, errwrite):
+                return self._execute_child_compat(args, executable, preexec_fn, close_fds,
+                           cwd, env, universal_newlines,
+                           startupinfo, creationflags, shell,
+                           p2cread, p2cwrite,
+                           c2pread, c2pwrite,
+                           errread, errwrite)
+        else:
+            def _execute_child(self, args, executable, preexec_fn, close_fds,
+                               pass_fds,
+                               cwd, env,
+                               startupinfo,
+                               creationflags, shell,
+                               p2cread, p2cwrite,
+                               c2pread, c2pwrite,
+                               errread, errwrite,
+                               unused_restore_signals, unused_start_new_session):
+                return self._execute_child_compat(args, executable, preexec_fn, close_fds,
+                           cwd, env, True, startupinfo,
+                           creationflags, shell,
+                           p2cread, p2cwrite,
+                           c2pread, c2pwrite,
+                           errread, errwrite)
+
+        def _execute_child_compat(self, args, executable, preexec_fn, close_fds,
                            cwd, env, universal_newlines,
                            startupinfo, creationflags, shell,
                            p2cread, p2cwrite,
@@ -125,7 +152,7 @@ if sys.platform == "win32" and sys.getwindowsversion()[3] == 2:
 
             if not isinstance(args, string_types):
                 args = list2cmdline(args)
-    
+
             # Process startup details
             if startupinfo is None:
                 startupinfo = STARTUPINFO()
@@ -134,7 +161,7 @@ if sys.platform == "win32" and sys.getwindowsversion()[3] == 2:
                 startupinfo.hStdInput = p2cread
                 startupinfo.hStdOutput = c2pwrite
                 startupinfo.hStdError = errwrite
-    
+
             if shell:
                 startupinfo.dwFlags |= STARTF_USESHOWWINDOW
                 startupinfo.wShowWindow = SW_HIDE
@@ -155,9 +182,9 @@ if sys.platform == "win32" and sys.getwindowsversion()[3] == 2:
                     # stability of your system.  Cost is Ctrl+C wont
                     # kill children.
                     creationflags |= CREATE_NEW_CONSOLE
-    
+
                 # We create a new job for this process, so that we can kill
-                # the process and any sub-processes 
+                # the process and any sub-processes
                 self._job = winprocess.CreateJobObject()
                 creationflags |= winprocess.CREATE_SUSPENDED
                 # Vista will launch Komodo in a job object itself, so we need
@@ -165,7 +192,7 @@ if sys.platform == "win32" and sys.getwindowsversion()[3] == 2:
                 # job object, but instead specify that it will be using a
                 # separate breakaway job object, bug 83001.
                 creationflags |= winprocess.CREATE_BREAKAWAY_FROM_JOB
-    
+
             # Start the process
             try:
                 hp, ht, pid, tid = CreateProcess(executable, args,
@@ -185,7 +212,7 @@ if sys.platform == "win32" and sys.getwindowsversion()[3] == 2:
             except WindowsError:
                 log.error("process.py: can't execute %r (%s)", executable, args)
                 raise
-    
+
             # Retain the process handle, but close the thread handle
             self._child_created = True
             self._handle = hp
@@ -194,8 +221,8 @@ if sys.platform == "win32" and sys.getwindowsversion()[3] == 2:
                 # Resume the thread.
                 winprocess.AssignProcessToJobObject(self._job, int(hp))
                 winprocess.ResumeThread(int(ht))
-            ht.Close()
-    
+            # ht.Close()
+
             # Child is launched. Close the parent's copy of those pipe
             # handles that only the child should have open.  You need
             # to make sure that no handles to the write end of the
@@ -208,7 +235,7 @@ if sys.platform == "win32" and sys.getwindowsversion()[3] == 2:
                 c2pwrite.Close()
             if errwrite is not None:
                 errwrite.Close()
-    
+
         def terminate(self):
             """Terminates the process"""
             if self._job:
@@ -366,7 +393,10 @@ class ProcessOpen(Popen):
             if sys.platform != "win32":
                 cls.__needToHackAroundStdHandles = False
             else:
-                from _subprocess import GetStdHandle, STD_INPUT_HANDLE
+                try:
+                    from _subprocess import GetStdHandle, STD_INPUT_HANDLE
+                except ImportError:
+                    from _winapi import GetStdHandle, STD_INPUT_HANDLE
                 stdin_handle = GetStdHandle(STD_INPUT_HANDLE)
                 if stdin_handle is not None:
                     cls.__needToHackAroundStdHandles = True
@@ -385,7 +415,10 @@ class ProcessOpen(Popen):
         @param fileobj The object being used as a fd/handle/whatever
         @param stream_name The name of the stream, "stdin", "stdout", or "stderr"
         """
-        import _subprocess
+        try:
+            from _subprocess import STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLER, GetStdHandle
+        except ImportError:
+            from _winapi import STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLER, GetStdHandle
         import ctypes
         import msvcrt
         new_handle = None
@@ -400,11 +433,11 @@ class ProcessOpen(Popen):
         try:
             if fileobj is None:
                 std_handle = {
-                    "stdin": _subprocess.STD_INPUT_HANDLE,
-                    "stdout": _subprocess.STD_OUTPUT_HANDLE,
-                    "stderr": _subprocess.STD_ERROR_HANDLE,
+                    "stdin": STD_INPUT_HANDLE,
+                    "stdout": STD_OUTPUT_HANDLE,
+                    "stderr": STD_ERROR_HANDLE,
                 }[stream_name]
-                handle = _subprocess.GetStdHandle(std_handle)
+                handle = GetStdHandle(std_handle)
                 if handle is None:
                     # subprocess.Popen._get_handles creates a new pipe here
                     # we don't have to worry about things we create
@@ -452,7 +485,7 @@ class ProcessOpen(Popen):
 
     def wait(self, timeout=None):
         """Wait for the started process to complete.
-        
+
         "timeout" is a floating point number of seconds after
             which to timeout.  Default is None, which is to never timeout.
 
@@ -508,7 +541,7 @@ class ProcessOpen(Popen):
     # For backward compatibility with older process.py
     def kill(self, exitCode=-1, gracePeriod=None, sig=None):
         """Kill process.
-        
+
         "exitCode" this sets what the process return value will be.
         "gracePeriod" [deprecated, not supported]
         "sig" (Unix only) is the signal to use to kill the process. Defaults
